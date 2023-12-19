@@ -19,7 +19,7 @@ const io = new Server(expressServer, {
   }
 });
 
-const UserState = {
+const UsersState = {
   users: [],
   setUsers: function (newUsersArray) {
     this.users = newUsersArray
@@ -29,7 +29,21 @@ const UserState = {
 io.on('connection', socket => {
   console.log('socket connection id', socket.id)
   // only to user connecting in
-  socket.emit('message', 'welcom to chat!')
+  socket.emit('message', buildMsg(ADMIN, 'Welcome'))
+  socket.on('enterRoom', ({name, room}) => {
+    //leave previous room
+    const prevRoom = getUser(socket.id)?.room
+    if (prevRoom) {
+      socket.leave(prevRoom)
+      io.to(prevRoom).emit('message', buildMsg(ADMIN, `${ name } has left`))
+    }
+
+    const user = activateUser(socket.id, name, room)
+    if (prevRoom)
+      io.to(prevRoom).emit('userList', {
+        users: getUsersInRoom(prevRoom)
+      })
+  })
   // to all others
   socket.broadcast.emit('message', `${ socket.id } connected`)
   // listening for a message event
@@ -49,3 +63,38 @@ io.on('connection', socket => {
   })
 })
 
+
+function buildMsg(name, text) {
+  return {
+    name,
+    text,
+    time: new Intl.DateTimeFormat('default', {
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric'
+    }).format(new Date())
+  }
+}
+
+function activateUser(id, name, room) {
+  const user = {id, name, room}
+  UsersState.setUsers([
+    ...UsersState.users.filter(user = user.id !== id),
+    user
+  ])
+  return user
+}
+
+function userLeavesApp(id) {
+  UsersState.setUsers(
+    UsersState.users.filter(user => user.id !== id))
+}
+
+function getUsersInRoom(room) {
+  return UsersState.users.filter(user => user.room === room)
+}
+
+function getAllActiveRooms() {
+  return Array.from(new Set(UsersState.users.map(user =>
+    user.room)))
+}
